@@ -2,42 +2,54 @@ import { useEffect, useState } from "react";
 import { initializeLanguageDetector, detectLanguage } from "./util/langDetector";
 import { initializeTranslator, translateText } from "./util/translator";
 
-// Helper function to format critical errors
+// Helper function to format critical errors.
 function formatError(message) {
   if (!message) return "";
   const lowerMessage = message.toLowerCase();
-  if (lowerMessage.includes("not available") || lowerMessage.includes("not supported")) {
+  if (lowerMessage.includes("not available")) {
     return "Your device or browser does not support this feature. Please try updating your device or using a different browser.";
   }
   return message;
 }
 
 export default function UnifiedTextProcessor() {
-  const [text, setText] = useState("");
-  const [mode, setMode] = useState("detect"); // "detect", "translate", or "summarize"
+  // Persist text, mode, sourceLang, and targetLang using localStorage.
+  const [text, setText] = useState(() => localStorage.getItem("utp_text") || "");
+  const [mode, setMode] = useState(() => localStorage.getItem("utp_mode") || "detect");
+  const [sourceLang, setSourceLang] = useState(() => localStorage.getItem("utp_sourceLang") || "en");
+  const [targetLang, setTargetLang] = useState(() => localStorage.getItem("utp_targetLang") || "fr");
+
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Model instances for real API calls.
   const [detector, setDetector] = useState(null);
   const [translator, setTranslator] = useState(null);
-
-  // Translation language settings.
-  const [sourceLang, setSourceLang] = useState("en");
-  const [targetLang, setTargetLang] = useState("fr");
-
-  // For handling copy-to-clipboard feedback.
   const [copied, setCopied] = useState(false);
 
-  // Initialize the model when mode or language settings change.
+  // Update localStorage when state changes.
+  useEffect(() => {
+    localStorage.setItem("utp_text", text);
+  }, [text]);
+
+  useEffect(() => {
+    localStorage.setItem("utp_mode", mode);
+  }, [mode]);
+
+  useEffect(() => {
+    localStorage.setItem("utp_sourceLang", sourceLang);
+  }, [sourceLang]);
+
+  useEffect(() => {
+    localStorage.setItem("utp_targetLang", targetLang);
+  }, [targetLang]);
+
+  // Initialize the appropriate model when mode or language settings change.
   useEffect(() => {
     setError(null);
     setResult(null);
     setLoading(true);
 
     if (mode === "detect") {
-      // Download and initialize the language detector.
       initializeLanguageDetector().then(({ detector: newDetector, error: initError }) => {
         if (initError) {
           setError(formatError(initError));
@@ -47,13 +59,11 @@ export default function UnifiedTextProcessor() {
         setLoading(false);
       });
     } else if (mode === "translate") {
-      // If the source and target languages are identical, skip initialization.
       if (sourceLang === targetLang) {
         setTranslator(null);
         setLoading(false);
         return;
       }
-      // Download and initialize the translator for the selected languages.
       initializeTranslator(sourceLang, targetLang).then(({ translator: newTranslator, error: initError }) => {
         if (initError) {
           setError(formatError(initError));
@@ -63,14 +73,13 @@ export default function UnifiedTextProcessor() {
         setLoading(false);
       });
     } else {
-      // For summarization no external model is needed.
       setDetector(null);
       setTranslator(null);
       setLoading(false);
     }
   }, [mode, sourceLang, targetLang]);
 
-  // Process the text periodically every 2 seconds.
+  // Process the text every 2 seconds.
   useEffect(() => {
     let interval;
     const processText = async () => {
@@ -79,14 +88,12 @@ export default function UnifiedTextProcessor() {
         return;
       }
       setError(null);
-
       try {
         if (mode === "detect") {
-          if (!detector) return; // Wait until the detector is initialized.
+          if (!detector) return; // Wait until detector is ready.
           const { results, error: detectError } = await detectLanguage(detector, text);
           if (detectError) throw new Error(detectError);
           if (results && results.length > 0) {
-            // Pick the top result (highest confidence).
             const topResult = results.reduce(
               (prev, curr) => (curr.confidence > prev.confidence ? curr : prev),
               results[0]
@@ -96,12 +103,11 @@ export default function UnifiedTextProcessor() {
             setResult(null);
           }
         } else if (mode === "translate") {
-          // Handle same-language selection gracefully.
           if (sourceLang === targetLang) {
             setResult("Source and target languages are identical. No translation needed.");
             return;
           }
-          if (!translator) return; // Wait until the translator is initialized.
+          if (!translator) return; // Wait until translator is ready.
           const { translatedText, error: transError } = await translateText(translator, text);
           if (transError) throw new Error(transError);
           setResult(translatedText);
@@ -118,12 +124,12 @@ export default function UnifiedTextProcessor() {
       }
     };
 
-    processText(); // Process immediately.
+    processText();
     interval = setInterval(processText, 2000);
     return () => clearInterval(interval);
   }, [text, mode, detector, translator, sourceLang, targetLang]);
 
-  // Function to copy translated text to clipboard.
+  // Copy translated text to clipboard.
   const handleCopy = () => {
     if (result) {
       navigator.clipboard.writeText(result).then(() => {
@@ -133,7 +139,7 @@ export default function UnifiedTextProcessor() {
     }
   };
 
-  // Handle mode change: reset previous outputs and errors.
+  // Handle mode change.
   const handleModeChange = (e) => {
     setMode(e.target.value);
     setResult(null);
@@ -166,12 +172,12 @@ export default function UnifiedTextProcessor() {
 
         {/* Translation Language Selectors */}
         {mode === "translate" && (
-          <div className="flex gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
             <select
               value={sourceLang}
               onChange={(e) => {
                 setSourceLang(e.target.value);
-                setTranslator(null); // Reinitialize translator on language change.
+                setTranslator(null);
               }}
               className="flex-1 p-3 rounded-lg border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             >
@@ -182,7 +188,8 @@ export default function UnifiedTextProcessor() {
               <option value="tr">Turkish</option>
               <option value="fr">French</option>
             </select>
-            <div className="self-center text-xl">➡️</div>
+            {/* Arrow only visible on small screens and up */}
+            <div className="hidden sm:flex self-center text-xl">➡️</div>
             <select
               value={targetLang}
               onChange={(e) => {
