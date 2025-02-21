@@ -154,14 +154,11 @@ export default function UnifiedTextProcessor() {
         <div className="flex items-center justify-center mb-6 space-x-3">
           {getModeIcon()}
           <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-            Noble Text Processor
+           Ai on the Browser. Cool Right!
           </h1>
         </div>
         
-        <p className="text-center text-gray-600 mb-8">
-          Transform your text with advanced processing capabilities
-        </p>
-
+        
         <div className="space-y-6">
           {/* Mode Selection */}
           <div className="relative group">
@@ -270,19 +267,21 @@ export default function UnifiedTextProcessor() {
           {result && !error && (
             <div className="relative p-6 rounded-xl bg-gradient-to-br from-purple-50 to-blue-50 
                           border border-purple-100">
-              <div className="absolute top-4 right-4">
-                <button
-                  onClick={handleCopy}
-                  className="p-2 rounded-lg hover:bg-purple-100 transition-colors"
-                  title="Copy to clipboard"
-                >
-                  {copied ? (
-                    <Check className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <Copy className="w-5 h-5 text-purple-600" />
-                  )}
-                </button>
-              </div>
+              {mode === 'translate' && (
+                <div className="absolute top-4 right-4">
+                  <button
+                    onClick={handleCopy}
+                    className="p-2 rounded-lg hover:bg-purple-100 transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {copied ? (
+                      <Check className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <Copy className="w-5 h-5 text-purple-600" />
+                    )}
+                  </button>
+                </div>
+              )}
 
               {mode === "detect" && (
                 <div className="space-y-2">
