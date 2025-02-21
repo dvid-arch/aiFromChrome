@@ -102,7 +102,7 @@ export default function UnifiedTextProcessor() {
     };
   }, [mode, sourceLang, targetLang]);
 
-  // Text processing effect
+  // Text processing effect 
   useEffect(() => {
     if (!text.trim()) {
       setResult(null);
@@ -113,7 +113,11 @@ export default function UnifiedTextProcessor() {
     const processTextTimeout = setTimeout(async () => {
       setError(null);
       try {
-        if (mode === "detect" && detector) {
+        if (mode === "detect") {
+          if (!detector) {
+            setResult("Loading language detection model, please wait...");
+            return;
+          }
           const { results, error: detectError } = await detectLanguage(detector, text);
           if (!isMounted) return;
           if (detectError) throw new Error(detectError);
@@ -124,14 +128,17 @@ export default function UnifiedTextProcessor() {
             );
             setResult(topResult);
           } else {
-            setResult(null);
+            setResult("No language detected.");
           }
         } else if (mode === "translate") {
           if (sourceLang === targetLang) {
             setResult("Source and target languages are identical. No translation needed.");
             return;
           }
-          if (!translator) return;
+          if (!translator) {
+            setResult("Loading translation model, please wait...");
+            return;
+          }
           const { translatedText, error: transError } = await translateText(translator, text);
           if (!isMounted) return;
           if (transError) throw new Error(transError);
@@ -366,7 +373,7 @@ export default function UnifiedTextProcessor() {
                   >
                     Cancel
                   </button>
-                  
+
                 </div>
               </div>
             </div>
