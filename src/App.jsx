@@ -58,7 +58,7 @@ export default function UnifiedTextProcessor() {
   // Initialize models effect
   useEffect(() => {
     let isMounted = true;
-    
+
     const initializeModels = async () => {
       setError(null);
       setResult(null);
@@ -366,23 +366,25 @@ export default function UnifiedTextProcessor() {
                   >
                     Cancel
                   </button>
-                  <button
-                    onClick={() => {
-                      const url =
-                        mode === "translate"
-                          ? "chrome://flags/#translation-api"
-                          : "chrome://flags/#language-detection-api";
-                      window.location.href = url;
-                    }}
+                  <a
+                    href={
+                      mode === "translate"
+                        ? "chrome://flags/#translation-api"
+                        : "chrome://flags/#language-detection-api"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setShowCompatDialog(false)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center"
                   >
                     Open Settings
                     <Icon name="ExternalLink" className="ml-2 w-4 h-4" />
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>
           )}
+
 
           {/* Results Display */}
           {result && !error && (
