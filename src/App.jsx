@@ -1,16 +1,31 @@
 import React, { useEffect, useState } from "react";
-import { ArrowRight, Languages, FileText, FileSearch, Copy, Check, Loader2 } from "lucide-react";
 import { initializeLanguageDetector, detectLanguage } from "./util/langDetector";
 import { initializeTranslator, translateText } from "./util/translator";
 
+function isDeviceError(message) {
+  if (!message) return false;
+  return message.toLowerCase().includes("not available");
+}
+
 function formatError(message) {
   if (!message) return "";
-  const lowerMessage = message.toLowerCase();
-  if (lowerMessage.includes("not available")) {
-    return "Your device or browser does not support this feature. Please try updating your device or using a different browser.";
-  }
   return message;
 }
+
+// A simple Icon component to replace lucide-react icons.
+const Icon = ({ name, className }) => {
+  const icons = {
+    ArrowRight: <span className={className}>→</span>,
+    Languages: <span className={className}>🌐</span>,
+    FileText: <span className={className}>📄</span>,
+    FileSearch: <span className={className}>🔍</span>,
+    Copy: <span className={className}>📋</span>,
+    Check: <span className={className}>✔️</span>,
+    Loader2: <span className={className}>⏳</span>,
+    ExternalLink: <span className={className}>↗️</span>,
+  };
+  return icons[name] || null;
+};
 
 export default function UnifiedTextProcessor() {
   // State management
@@ -20,6 +35,7 @@ export default function UnifiedTextProcessor() {
   const [targetLang, setTargetLang] = useState(() => localStorage.getItem("utp_targetLang") || "fr");
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [showCompatDialog, setShowCompatDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detector, setDetector] = useState(null);
   const [translator, setTranslator] = useState(null);
@@ -41,53 +57,65 @@ export default function UnifiedTextProcessor() {
 
   // Initialize models effect
   useEffect(() => {
-    setError(null);
-    setResult(null);
-    setLoading(true);
+    let isMounted = true;
+    
+    const initializeModels = async () => {
+      setError(null);
+      setResult(null);
+      setLoading(true);
 
-    if (mode === "detect") {
-      initializeLanguageDetector().then(({ detector: newDetector, error: initError }) => {
-        if (initError) {
-          setError(formatError(initError));
+      try {
+        if (mode === "detect") {
+          const { detector: newDetector, error: initError } = await initializeLanguageDetector();
+          if (!isMounted) return;
+          if (initError) {
+            setError(formatError(initError));
+          } else {
+            setDetector(newDetector);
+          }
+        } else if (mode === "translate" && sourceLang !== targetLang) {
+          const { translator: newTranslator, error: initError } = await initializeTranslator(sourceLang, targetLang);
+          if (!isMounted) return;
+          if (initError) {
+            setError(formatError(initError));
+          } else {
+            setTranslator(newTranslator);
+          }
         } else {
-          setDetector(newDetector);
+          setDetector(null);
+          setTranslator(null);
         }
-        setLoading(false);
-      });
-    } else if (mode === "translate") {
-      if (sourceLang === targetLang) {
-        setTranslator(null);
-        setLoading(false);
-        return;
+      } catch (err) {
+        if (!isMounted) return;
+        setError(formatError(err.message));
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-      initializeTranslator(sourceLang, targetLang).then(({ translator: newTranslator, error: initError }) => {
-        if (initError) {
-          setError(formatError(initError));
-        } else {
-          setTranslator(newTranslator);
-        }
-        setLoading(false);
-      });
-    } else {
-      setDetector(null);
-      setTranslator(null);
-      setLoading(false);
-    }
+    };
+
+    initializeModels();
+
+    return () => {
+      isMounted = false;
+    };
   }, [mode, sourceLang, targetLang]);
 
   // Text processing effect
   useEffect(() => {
-    let interval;
-    const processText = async () => {
-      if (!text.trim()) {
-        setResult(null);
-        return;
-      }
+    if (!text.trim()) {
+      setResult(null);
+      return;
+    }
+
+    let isMounted = true;
+    const processTextTimeout = setTimeout(async () => {
       setError(null);
       try {
-        if (mode === "detect") {
-          if (!detector) return;
+        if (mode === "detect" && detector) {
           const { results, error: detectError } = await detectLanguage(detector, text);
+          if (!isMounted) return;
           if (detectError) throw new Error(detectError);
           if (results && results.length > 0) {
             const topResult = results.reduce(
@@ -105,6 +133,7 @@ export default function UnifiedTextProcessor() {
           }
           if (!translator) return;
           const { translatedText, error: transError } = await translateText(translator, text);
+          if (!isMounted) return;
           if (transError) throw new Error(transError);
           setResult(translatedText);
         } else if (mode === "summarize") {
@@ -115,16 +144,19 @@ export default function UnifiedTextProcessor() {
           setResult(summary);
         }
       } catch (err) {
+        if (!isMounted) return;
         setError(formatError(err.message));
         setResult(null);
       }
-    };
+    }, 1000);
 
-    processText();
-    interval = setInterval(processText, 2000);
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearTimeout(processTextTimeout);
+    };
   }, [text, mode, detector, translator, sourceLang, targetLang]);
 
+  // Copy to clipboard handler
   const handleCopy = () => {
     if (result) {
       navigator.clipboard.writeText(typeof result === 'string' ? result : result.language);
@@ -133,12 +165,17 @@ export default function UnifiedTextProcessor() {
     }
   };
 
+  // Returns an icon based on the selected mode
   const getModeIcon = () => {
     switch (mode) {
-      case "detect": return <Languages className="w-5 h-5" />;
-      case "translate": return <ArrowRight className="w-5 h-5" />;
-      case "summarize": return <FileText className="w-5 h-5" />;
-      default: return <FileSearch className="w-5 h-5" />;
+      case "detect":
+        return <Icon name="Languages" className="w-5 h-5" />;
+      case "translate":
+        return <Icon name="ArrowRight" className="w-5 h-5" />;
+      case "summarize":
+        return <Icon name="FileText" className="w-5 h-5" />;
+      default:
+        return <Icon name="FileSearch" className="w-5 h-5" />;
     }
   };
 
@@ -154,11 +191,10 @@ export default function UnifiedTextProcessor() {
         <div className="flex items-center justify-center mb-6 space-x-3">
           {getModeIcon()}
           <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-           Ai on the Browser. Cool Right!
+            AI on the Browser. Cool Right!
           </h1>
         </div>
-        
-        
+
         <div className="space-y-6">
           {/* Mode Selection */}
           <div className="relative group">
@@ -168,9 +204,9 @@ export default function UnifiedTextProcessor() {
             <select
               value={mode}
               onChange={handleModeChange}
-              className="w-full p-3 rounded-xl border-2 border-gray-200 bg-white/50 backdrop-blur-sm
+              className="w-fit p-3 rounded-xl border-2 border-gray-200 bg-white/50   
                          focus:border-purple-500 focus:ring focus:ring-purple-200 focus:ring-opacity-50
-                         transition-all duration-300 outline-none appearance-none
+                         transition-all duration-300 outline-none 
                          hover:border-purple-300"
             >
               <option value="detect">Detect Language</option>
@@ -201,11 +237,11 @@ export default function UnifiedTextProcessor() {
                   <option value="tr">Turkish</option>
                 </select>
               </div>
-              
+
               <div className="hidden sm:flex items-center justify-center">
-                <ArrowRight className="w-6 h-6 text-purple-500 animate-pulse" />
+                <Icon name="ArrowRight" className="w-6 h-6 text-purple-500 animate-pulse" />
               </div>
-              
+
               <div className="flex-1">
                 <select
                   value={targetLang}
@@ -244,30 +280,114 @@ export default function UnifiedTextProcessor() {
             />
             {isTyping && (
               <div className="absolute bottom-3 right-3">
-                <Loader2 className="w-5 h-5 text-purple-500 animate-spin" />
+                <Icon name="Loader2" className="w-5 h-5 text-purple-500 animate-spin" />
               </div>
             )}
           </div>
 
-          {/* Feedback States */}
+          {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center space-x-2 text-purple-600">
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Icon name="Loader2" className="w-5 h-5 animate-spin" />
               <span>Loading {mode === "detect" ? "language model" : "translation model"}...</span>
             </div>
           )}
 
+          {/* Error Message */}
           {error && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-600">
-              {error}
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+              <strong className="block mb-2">Error</strong>
+              <div className="flex items-center justify-between">
+                <span>{error}</span>
+                {isDeviceError(error) && (
+                  <button
+                    onClick={() => setShowCompatDialog(true)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none"
+                  >
+                    Fix Now
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Compatibility Dialog Modal */}
+          {showCompatDialog && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                <h2 className="text-xl font-bold mb-4">Enable Required Features</h2>
+                <div className="space-y-4">
+                  {mode === "translate" ? (
+                    <div>
+                      <h3 className="font-semibold">For Translation:</h3>
+                      <ol className="list-decimal list-inside space-y-2">
+                        <li>
+                          Go to{" "}
+                          <code className="bg-slate-100 px-2 py-1 rounded">
+                            chrome://flags/#translation-api
+                          </code>
+                        </li>
+                        <li>
+                          Select <strong>Enabled</strong>
+                          <ul className="ml-6 mt-1">
+                            <li>
+                              To try more language pairs, select{" "}
+                              <strong>Enabled without language pack limit</strong>
+                            </li>
+                          </ul>
+                        </li>
+                        <li>
+                          Click <strong>Relaunch</strong> or restart Chrome
+                        </li>
+                      </ol>
+                    </div>
+                  ) : mode === "detect" ? (
+                    <div>
+                      <h3 className="font-semibold">For Language Detection:</h3>
+                      <ol className="list-decimal list-inside space-y-2">
+                        <li>
+                          Go to{" "}
+                          <code className="bg-slate-100 px-2 py-1 rounded">
+                            chrome://flags/#language-detection-api
+                          </code>
+                        </li>
+                        <li>Select <strong>Enabled</strong></li>
+                        <li>
+                          Click <strong>Relaunch</strong> or restart Chrome
+                        </li>
+                      </ol>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-6 flex justify-end space-x-2">
+                  <button
+                    onClick={() => setShowCompatDialog(false)}
+                    className="px-4 py-2 border rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url =
+                        mode === "translate"
+                          ? "chrome://flags/#translation-api"
+                          : "chrome://flags/#language-detection-api";
+                      window.location.href = url;
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center"
+                  >
+                    Open Settings
+                    <Icon name="ExternalLink" className="ml-2 w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
           {/* Results Display */}
           {result && !error && (
-            <div className="relative p-6 rounded-xl bg-gradient-to-br from-purple-50 to-blue-50 
-                          border border-purple-100">
-              {mode === 'translate' && (
+            <div className="relative p-6 rounded-xl bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-100">
+              {mode === "translate" && (
                 <div className="absolute top-4 right-4">
                   <button
                     onClick={handleCopy}
@@ -275,9 +395,9 @@ export default function UnifiedTextProcessor() {
                     title="Copy to clipboard"
                   >
                     {copied ? (
-                      <Check className="w-5 h-5 text-green-600" />
+                      <Icon name="Check" className="w-5 h-5 text-green-600" />
                     ) : (
-                      <Copy className="w-5 h-5 text-purple-600" />
+                      <Icon name="Copy" className="w-5 h-5 text-purple-600" />
                     )}
                   </button>
                 </div>
