@@ -366,20 +366,7 @@ export default function UnifiedTextProcessor() {
                   >
                     Cancel
                   </button>
-                  <a
-                    href={
-                      mode === "translate"
-                        ? "chrome://flags/#translation-api"
-                        : "chrome://flags/#language-detection-api"
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setShowCompatDialog(false)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center"
-                  >
-                    Open Settings
-                    <Icon name="ExternalLink" className="ml-2 w-4 h-4" />
-                  </a>
+                  
                 </div>
               </div>
             </div>
